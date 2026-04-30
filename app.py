@@ -1,9 +1,6 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
 
 st.set_page_config(page_title="Crop Recommendation", layout="wide")
 
@@ -21,33 +18,16 @@ def load_data():
 df = load_data()
 
 # -----------------------------
-# TRAIN MODEL (NO PKL)
+# HEADER
 # -----------------------------
-@st.cache_resource
-def train_model(df):
-    le_state = LabelEncoder()
-    le_season = LabelEncoder()
-    le_crop = LabelEncoder()
-
-    df['State_enc'] = le_state.fit_transform(df['State_Name'])
-    df['Season_enc'] = le_season.fit_transform(df['Season'])
-    df['Crop_enc'] = le_crop.fit_transform(df['Crop'])
-
-    X = df[['State_enc','Season_enc','level1','level2','level3','total','Yield']]
-    y = df['Crop_enc']
-
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X, y)
-
-    return model, le_state, le_season, le_crop
-
-model, le_state, le_season, le_crop = train_model(df)
+st.markdown("""
+<h1 style='text-align: center;'>Smart Crop Recommendation System</h1>
+<hr>
+""", unsafe_allow_html=True)
 
 # -----------------------------
-# UI
+# INPUT SECTION
 # -----------------------------
-st.markdown("<h1 style='text-align:center;'>Smart Crop Recommendation</h1><hr>", unsafe_allow_html=True)
-
 col1, col2 = st.columns(2)
 
 with col1:
@@ -56,20 +36,26 @@ with col1:
 with col2:
     season = st.selectbox("Select Season", sorted(df['Season'].unique()))
 
+# -----------------------------
+# FILTER DATA
+# -----------------------------
 filtered = df[
     (df['State_Name'] == state) &
     (df['Season'] == season)
 ]
 
+# -----------------------------
+# AVAILABLE CROPS
+# -----------------------------
 st.subheader("Available Crops")
 
 if filtered.empty:
-    st.warning("No data available")
+    st.warning("No data available for selected inputs")
 else:
     st.write(", ".join(sorted(filtered['Crop'].unique())))
 
 # -----------------------------
-# PREDICTION
+# BUTTON
 # -----------------------------
 if st.button("Recommend Best Combination"):
 
@@ -77,65 +63,45 @@ if st.button("Recommend Best Combination"):
         st.error("No data available")
 
     else:
-        # Average features
-        avg_vals = filtered[['level1','level2','level3','total','Yield']].mean()
-
-        input_data = [[
-            le_state.transform([state])[0],
-            le_season.transform([season])[0],
-            avg_vals['level1'],
-            avg_vals['level2'],
-            avg_vals['level3'],
-            avg_vals['total'],
-            avg_vals['Yield']
-        ]]
-
-        probs = model.predict_proba(input_data)[0]
-
-        # -----------------------------
-        # Yield (for stability)
-        # -----------------------------
-        crop_yield = filtered.groupby('Crop')['Yield'].mean()
-
-        scores = []
-
-        for crop in crop_yield.index:
-            if crop not in le_crop.classes_:
-                continue
-
-            idx = le_crop.transform([crop])[0]
-            model_prob = probs[idx]
-            yield_score = crop_yield[crop] / crop_yield.max()
-
-            final_score = 0.6 * model_prob + 0.4 * yield_score
-
-            scores.append((crop, final_score))
-
-        scores = sorted(scores, key=lambda x: x[1], reverse=True)
+        crop_yield = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False)
 
         # -----------------------------
         # GRAPH
         # -----------------------------
-        plot_df = pd.DataFrame(scores[:15], columns=["Crop", "Score"])
+        
 
-        st.subheader("Top Crops Analysis")
+        fig, ax = plt.subplots(figsize=(14, 6))
+        ax.bar(crop_yield.index, crop_yield.values)
 
-        fig, ax = plt.subplots(figsize=(14,6))
-        ax.bar(plot_df["Crop"], plot_df["Score"])
-        ax.set_ylabel("Score")
+        ax.set_xlabel("Crops")
+        ax.set_ylabel("Average Yield (kg/ha)")
+        ax.set_title("Yield Comparison")
+
         plt.xticks(rotation=90)
 
         st.pyplot(fig)
 
         # -----------------------------
-        # RESULT
+        # RESULT CARD
         # -----------------------------
-        best_two = [scores[0][0], scores[1][0]]
+        if len(crop_yield) < 2:
+            st.error("Not enough crops")
+        else:
+            best_two = crop_yield.head(2).index.tolist()
 
-        st.markdown("""
-        <div style="padding:20px; background:#f0f2f6; border-radius:10px;">
-        <h3 style='text-align:center;'>Recommended Crop Combination</h3>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown("""
+            <div style="
+                padding:20px;
+                border-radius:10px;
+                background-color:#f0f2f6;
+                margin-top:20px;
+            ">
+                <h3 style='text-align:center;'>Recommended Crop Combination</h3>
+            </div>
+            """, unsafe_allow_html=True)
 
-        st.markdown(f"<h2 style='text-align:center; color:#2E7D32;'>{best_two[0]} + {best_two[1]}</h2>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <h2 style='text-align:center; color:#2E7D32;'>
+            {best_two[0]} + {best_two[1]}
+            </h2>
+            """, unsafe_allow_html=True)
