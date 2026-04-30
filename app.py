@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Smart Crop Recommendation", layout="centered")
 
@@ -51,6 +50,9 @@ st.title("🌾 Smart Crop Recommendation System")
 state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
 season = st.selectbox("Select Season", sorted(df['Season'].unique()))
 
+# -----------------------------
+# FILTER DATA
+# -----------------------------
 filtered = df[
     (df['State_Name'] == state) &
     (df['Season'] == season)
@@ -64,18 +66,7 @@ st.subheader("🌱 Available Crops")
 if filtered.empty:
     st.warning("No data available")
 else:
-    crops = sorted(filtered['Crop'].unique())
-    st.write(", ".join(crops))
-
-# -----------------------------
-# VISUALIZATION (FIXED)
-# -----------------------------
-st.subheader("📊 Top Crops by Yield")
-
-if not filtered.empty:
-    crop_stats = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False).head(10)
-
-    st.bar_chart(crop_stats)
+    st.write(", ".join(sorted(filtered['Crop'].unique())))
 
 # -----------------------------
 # RECOMMENDATION
@@ -83,8 +74,9 @@ if not filtered.empty:
 if st.button("Recommend Best Combination"):
 
     if filtered.empty:
-        st.error("No data")
+        st.error("No data for prediction")
     else:
+        # Average feature values
         avg_vals = filtered[['level1','level2','level3','total','Yield']].mean()
 
         input_data = [[
@@ -99,11 +91,13 @@ if st.button("Recommend Best Combination"):
 
         probs = model.predict_proba(input_data)[0]
 
+        # -----------------------------
+        # SCORE CALCULATION (FIXED)
+        # -----------------------------
         crop_stats = filtered.groupby('Crop').agg({
             'Yield': 'mean'
         }).reset_index()
 
-        # Normalize yield
         crop_stats['Yield_norm'] = crop_stats['Yield'] / crop_stats['Yield'].max()
 
         scores = []
@@ -117,16 +111,40 @@ if st.button("Recommend Best Combination"):
             idx = le_crop.transform([crop])[0]
             prob = probs[idx]
 
-            final_score = (0.7 * prob) + (0.3 * row['Yield_norm'])
+            # Ignore very weak predictions
+            if prob < 0.01:
+                continue
+
+            final_score = (0.5 * prob) + (0.5 * row['Yield_norm'])
 
             scores.append((crop, prob, row['Yield_norm'], final_score))
 
+        if len(scores) < 2:
+            st.error("Not enough strong crops for recommendation")
+            st.stop()
+
+        # Sort by final score
         scores = sorted(scores, key=lambda x: x[3], reverse=True)
 
+        # -----------------------------
+        # VISUALIZATION (CONSISTENT)
+        # -----------------------------
+        top_scores = scores[:10]
+
+        plot_df = pd.DataFrame({
+            "Crop": [x[0] for x in top_scores],
+            "Score": [x[3] for x in top_scores]
+        })
+
+        st.subheader("📊 Top Crops (Final Score)")
+        st.bar_chart(plot_df.set_index("Crop"))
+
+        # -----------------------------
+        # BEST COMBINATION (CORRECT)
+        # -----------------------------
         crop1, p1, y1, s1 = scores[0]
         crop2, p2, y2, s2 = scores[1]
 
-        # Better combined score
         combined = round(((s1 + s2) / 2) * 100, 2)
 
         # -----------------------------
@@ -138,12 +156,12 @@ if st.button("Recommend Best Combination"):
 
         st.subheader("📊 Confidence Analysis")
 
-        st.write(f"{crop1} → Model: {round(p1*100,2)}% | Yield: {round(y1*100,2)}%")
-        st.write(f"{crop2} → Model: {round(p2*100,2)}% | Yield: {round(y2*100,2)}%")
+        st.write(f"{crop1} → Model: {round(p1*100,2)}% | Yield: {round(y1*100,2)}% | Final Score: {round(s1*100,2)}%")
+        st.write(f"{crop2} → Model: {round(p2*100,2)}% | Yield: {round(y2*100,2)}% | Final Score: {round(s2*100,2)}%")
 
         st.write(f"🌾 Combined Score → {combined}%")
 
-        st.progress(float(p1))
-        st.progress(float(p2))
+        st.progress(float(s1))
+        st.progress(float(s2))
 
-        st.info("This is a data-driven recommendation, not a guaranteed real-world outcome.")
+        st.info("This is a data-driven recommendation based on historical yield and model prediction, not a guaranteed real-world outcome.")
