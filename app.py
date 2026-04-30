@@ -2,8 +2,50 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# -------------------------
+# PAGE CONFIG
+# -------------------------
 st.set_page_config(page_title="Crop Recommendation", layout="wide")
 
+# -------------------------
+# 🌾 CUSTOM THEME (AGRI LOOK)
+# -------------------------
+st.markdown("""
+<style>
+.stApp {
+    background: linear-gradient(to right, #e8f5e9, #f1f8e9);
+}
+
+h1 {
+    color: #2e7d32;
+    text-align: center;
+}
+
+h2, h3 {
+    color: #388e3c;
+}
+
+div.stButton > button {
+    background-color: #2e7d32;
+    color: white;
+    border-radius: 10px;
+    height: 3em;
+    width: 100%;
+}
+
+div.stButton > button:hover {
+    background-color: #1b5e20;
+}
+
+.css-1d391kg {
+    background-color: #f1f8e9;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------
+# TITLE
+# -------------------------
 st.title("🌾 Smart Crop Recommendation System")
 
 # -------------------------
@@ -38,6 +80,8 @@ if df is None:
 # -------------------------
 # INPUTS
 # -------------------------
+st.subheader("📍 Select Location & Season")
+
 col1, col2 = st.columns(2)
 
 with col1:
@@ -62,52 +106,53 @@ if filtered.empty:
 # AVAILABLE CROPS
 # -------------------------
 st.subheader("🌱 Available Crops")
-st.write(", ".join(sorted(filtered['Crop'].unique())))
+
+st.markdown(f"""
+<div style='padding:12px; background:#dcedc8; border-radius:10px'>
+{", ".join(sorted(filtered['Crop'].unique()))}
+</div>
+""", unsafe_allow_html=True)
 
 # -------------------------
-# YIELD → SCORE (0–100)
+# YIELD CALCULATION
 # -------------------------
-crop_yield = filtered.groupby('Crop')['Yield'].mean()
-
-max_yield = crop_yield.max()
-
-crop_score = (crop_yield / max_yield) * 100
-crop_score = crop_score.sort_values(ascending=False)
+crop_yield = (
+    filtered.groupby('Crop')['Yield']
+    .mean()
+    .sort_values(ascending=False)
+)
 
 # -------------------------
-# TOP 10 GRAPH (CLEAN)
+# GRAPH
 # -------------------------
-top10 = crop_score.head(10)
+st.subheader("📊 Crop Yield Comparison")
 
-st.subheader("📊 Top Crops Ranking (0–100 Score)")
+fig, ax = plt.subplots(figsize=(14, 6))
 
-fig, ax = plt.subplots(figsize=(10, 5))
+bars = ax.bar(crop_yield.index, crop_yield.values, color="#66bb6a")
 
-bars = ax.bar(top10.index, top10.values)
+ax.set_xlabel("Crop")
+ax.set_ylabel("Average Yield (kg/ha)")
 
-# Highlight best
-bars[0].set_color('green')
-if len(bars) > 1:
-    bars[1].set_color('orange')
-
-ax.set_ylabel("Score (0–100)")
-plt.xticks(rotation=45)
+plt.xticks(rotation=90)
 
 st.pyplot(fig)
 
 # -------------------------
 # BEST COMBINATION
 # -------------------------
+st.subheader("🏆 Best Crop Combination")
+
 if st.button("Recommend Best Combination"):
 
-    if len(crop_score) < 2:
+    if len(crop_yield) < 2:
         st.error("Not enough crops")
     else:
-        top1 = crop_score.index[0]
-        top2 = crop_score.index[1]
+        top1 = crop_yield.index[0]
+        top2 = crop_yield.index[1]
 
         st.markdown(f"""
-        <div style='padding:20px; border-radius:10px; background-color:#e6f4ea; text-align:center'>
-            <h2> {top1} + {top2}</h2>
+        <div style='padding:20px; border-radius:12px; background-color:#c8e6c9; text-align:center'>
+            <h2>🌾 {top1} + {top2}</h2>
         </div>
         """, unsafe_allow_html=True)
