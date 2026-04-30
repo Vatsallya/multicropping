@@ -56,8 +56,25 @@ if st.button("Recommend Best Combination"):
         # -----------------------------
         # GRAPH (REAL MEANING)
         # -----------------------------
-        st.subheader("📊 Top Crops by Yield")
-        st.bar_chart(crop_yield.head(10))
+        import matplotlib.pyplot as plt
+
+# Average yield calculation
+crop_yield = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False)
+
+# Plot graph
+st.subheader("📊 Crop Yield (Average kg/ha)")
+
+fig, ax = plt.subplots()
+
+ax.bar(crop_yield.index, crop_yield.values)
+
+ax.set_xlabel("Crops")
+ax.set_ylabel("Average Yield (kg/ha)")   # ✅ THIS IS YOUR Y-AXIS LABEL
+ax.set_title("Crop Yield Comparison")
+
+plt.xticks(rotation=90)
+
+st.pyplot(fig)
 
         # -----------------------------
         # BEST COMBINATION
