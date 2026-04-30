@@ -119,7 +119,7 @@ st.markdown("---")
 # -------------------------
 # BEST COMBINATION
 # -------------------------
-st.subheader("🏆 Best Crop Combination")
+st.subheader("Best Crop Combination")
 
 if st.button("Generate Recommendation"):
 
@@ -131,6 +131,6 @@ if st.button("Generate Recommendation"):
 
         st.markdown(f"""
         <div style='padding:20px; border-radius:12px; background-color:#e6f4ea; text-align:center'>
-            <h2>👉 {top1} + {top2}</h2>
+            <h2> {top1} + {top2}</h2>
         </div>
         """, unsafe_allow_html=True)
