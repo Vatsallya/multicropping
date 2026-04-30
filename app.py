@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Crop Recommendation", layout="wide")
+st.set_page_config(page_title="Smart Crop Recommendation", layout="centered")
 
 # -----------------------------
 # LOAD DATA
@@ -18,23 +18,12 @@ def load_data():
 df = load_data()
 
 # -----------------------------
-# HEADER
+# UI
 # -----------------------------
-st.markdown("""
-<h1 style='text-align: center;'>Smart Crop Recommendation System</h1>
-<hr>
-""", unsafe_allow_html=True)
+st.title("🌾 Smart Crop Recommendation System")
 
-# -----------------------------
-# INPUT SECTION
-# -----------------------------
-col1, col2 = st.columns(2)
-
-with col1:
-    state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
-
-with col2:
-    season = st.selectbox("Select Season", sorted(df['Season'].unique()))
+state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
+season = st.selectbox("Select Season", sorted(df['Season'].unique()))
 
 # -----------------------------
 # FILTER DATA
@@ -47,15 +36,15 @@ filtered = df[
 # -----------------------------
 # AVAILABLE CROPS
 # -----------------------------
-st.subheader("Available Crops")
+st.subheader("🌱 Available Crops")
 
 if filtered.empty:
-    st.warning("No data available for selected inputs")
+    st.warning("No data available")
 else:
     st.write(", ".join(sorted(filtered['Crop'].unique())))
 
 # -----------------------------
-# BUTTON
+# RECOMMENDATION
 # -----------------------------
 if st.button("Recommend Best Combination"):
 
@@ -63,45 +52,34 @@ if st.button("Recommend Best Combination"):
         st.error("No data available")
 
     else:
+        # Average yield calculation
         crop_yield = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False)
 
         # -----------------------------
-        # GRAPH
+        # GRAPH (ALL CROPS)
         # -----------------------------
-        
+        st.subheader("📊 Crop Yield (Average kg/ha)")
 
-        fig, ax = plt.subplots(figsize=(14, 6))
+        fig, ax = plt.subplots(figsize=(12, 6))
         ax.bar(crop_yield.index, crop_yield.values)
 
         ax.set_xlabel("Crops")
         ax.set_ylabel("Average Yield (kg/ha)")
-        ax.set_title("Yield Comparison")
+        ax.set_title("Crop Yield Comparison")
 
         plt.xticks(rotation=90)
 
         st.pyplot(fig)
 
         # -----------------------------
-        # RESULT CARD
+        # BEST COMBINATION
         # -----------------------------
         if len(crop_yield) < 2:
-            st.error("Not enough crops")
+            st.error("Not enough crops for combination")
         else:
             best_two = crop_yield.head(2).index.tolist()
 
-            st.markdown("""
-            <div style="
-                padding:20px;
-                border-radius:10px;
-                background-color:#f0f2f6;
-                margin-top:20px;
-            ">
-                <h3 style='text-align:center;'>Recommended Crop Combination</h3>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success("🌾 Best Crop Combination")
+            st.markdown(f"## 👉 {best_two[0]} + {best_two[1]}")
 
-            st.markdown(f"""
-            <h2 style='text-align:center; color:#2E7D32;'>
-            {best_two[0]} + {best_two[1]}
-            </h2>
-            """, unsafe_allow_html=True)
+            st.write("🌱 Based on highest average yield (kg/ha)")
