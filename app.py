@@ -2,19 +2,9 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# -------------------------
-# PAGE CONFIG
-# -------------------------
 st.set_page_config(page_title="Crop Recommendation", layout="wide")
 
-# -------------------------
-# HEADER
-# -------------------------
-st.markdown("""
-    <h1 style='text-align: center;'>🌾 Smart Crop Recommendation System</h1>
-""", unsafe_allow_html=True)
-
-st.markdown("---")
+st.title("🌾 Smart Crop Recommendation System")
 
 # -------------------------
 # LOAD DATA
@@ -33,23 +23,21 @@ def load_data():
         else:
             return None
 
-    df['State_Name'] = df['State_Name'].astype(str).str.lower().str.strip()
-    df['Season'] = df['Season'].astype(str).str.lower().str.strip()
-    df['Crop'] = df['Crop'].astype(str).str.strip()
+    df['State_Name'] = df['State_Name'].str.lower().str.strip()
+    df['Season'] = df['Season'].str.lower().str.strip()
+    df['Crop'] = df['Crop'].str.strip()
 
     return df
 
 df = load_data()
 
 if df is None:
-    st.error("Dataset missing required columns")
+    st.error("Dataset issue")
     st.stop()
 
 # -------------------------
-# INPUT SECTION
+# INPUTS
 # -------------------------
-st.subheader("📍 Select Inputs")
-
 col1, col2 = st.columns(2)
 
 with col1:
@@ -57,8 +45,6 @@ with col1:
 
 with col2:
     season = st.selectbox("Season", sorted(df['Season'].unique()))
-
-st.markdown("---")
 
 # -------------------------
 # FILTER
@@ -69,68 +55,59 @@ filtered = df[
 ]
 
 if filtered.empty:
-    st.warning("No data available for this selection")
+    st.warning("No data available")
     st.stop()
 
 # -------------------------
 # AVAILABLE CROPS
 # -------------------------
 st.subheader("🌱 Available Crops")
-
-crop_list = sorted(filtered['Crop'].unique())
-
-st.markdown(f"""
-<div style='padding:10px; border-radius:10px; background-color:#f0f2f6'>
-{", ".join(crop_list)}
-</div>
-""", unsafe_allow_html=True)
+st.write(", ".join(sorted(filtered['Crop'].unique())))
 
 # -------------------------
-# YIELD CALCULATION
+# YIELD → SCORE (0–100)
 # -------------------------
-crop_yield = (
-    filtered.groupby('Crop')['Yield']
-    .mean()
-    .sort_values(ascending=False)
-)
+crop_yield = filtered.groupby('Crop')['Yield'].mean()
+
+max_yield = crop_yield.max()
+
+crop_score = (crop_yield / max_yield) * 100
+crop_score = crop_score.sort_values(ascending=False)
 
 # -------------------------
-# GRAPH
+# TOP 10 GRAPH (CLEAN)
 # -------------------------
-st.subheader("📊 Crop Yield Analysis")
+top10 = crop_score.head(10)
 
-fig, ax = plt.subplots(figsize=(14, 5))
+st.subheader("📊 Top Crops Ranking (0–100 Score)")
 
-bars = ax.bar(crop_yield.index, crop_yield.values)
+fig, ax = plt.subplots(figsize=(10, 5))
 
-ax.set_xlabel("Crops")
-ax.set_ylabel("Average Yield (kg/ha)")
+bars = ax.bar(top10.index, top10.values)
 
-plt.xticks(rotation=90)
+# Highlight best
+bars[0].set_color('green')
+if len(bars) > 1:
+    bars[1].set_color('orange')
 
-# Highlight top 2
-for i in range(min(2, len(bars))):
-    bars[i].set_color('green')
+ax.set_ylabel("Score (0–100)")
+plt.xticks(rotation=45)
 
 st.pyplot(fig)
-
-st.markdown("---")
 
 # -------------------------
 # BEST COMBINATION
 # -------------------------
-st.subheader("Best Crop Combination")
+if st.button("Recommend Best Combination"):
 
-if st.button("Generate Recommendation"):
-
-    if len(crop_yield) < 2:
-        st.error("Not enough crops to form a combination")
+    if len(crop_score) < 2:
+        st.error("Not enough crops")
     else:
-        top1 = crop_yield.index[0]
-        top2 = crop_yield.index[1]
+        top1 = crop_score.index[0]
+        top2 = crop_score.index[1]
 
         st.markdown(f"""
-        <div style='padding:20px; border-radius:12px; background-color:#e6f4ea; text-align:center'>
-            <h2> {top1} + {top2}</h2>
+        <div style='padding:20px; border-radius:10px; background-color:#e6f4ea; text-align:center'>
+            <h2>👉 {top1} + {top2}</h2>
         </div>
         """, unsafe_allow_html=True)
