@@ -13,19 +13,31 @@ st.set_page_config(layout="wide")
 @st.cache_data
 def load_data():
     df = pd.read_csv("final_dataset.csv")
-
-    # Normalize
     df.columns = df.columns.str.strip()
-    df['State_Name'] = df['State_Name'].str.lower().str.strip()
-    df['Season'] = df['Season'].str.lower().str.strip()
-    df['Crop'] = df['Crop'].str.strip()
+
+    # Fix column names if different
+    if 'State' in df.columns:
+        df.rename(columns={'State': 'State_Name'}, inplace=True)
+
+    # Create Yield if missing
+    if 'Yield' not in df.columns:
+        if 'Production' in df.columns and 'Area' in df.columns:
+            df['Yield'] = df['Production'] / df['Area']
+        else:
+            st.error("Dataset must contain Yield or (Production & Area)")
+            st.stop()
+
+    # Normalize text
+    df['State_Name'] = df['State_Name'].astype(str).str.lower().str.strip()
+    df['Season'] = df['Season'].astype(str).str.lower().str.strip()
+    df['Crop'] = df['Crop'].astype(str).str.strip()
 
     return df
 
 df = load_data()
 
 # -----------------------------
-# TRAIN MODEL
+# ENCODING + MODEL
 # -----------------------------
 @st.cache_resource
 def train_model(df):
@@ -37,14 +49,7 @@ def train_model(df):
     df['Season_enc'] = le_season.fit_transform(df['Season'])
     df['Crop_enc'] = le_crop.fit_transform(df['Crop'])
 
-    features = ['State_enc','Season_enc','level1','level2','level3','total','Yield']
-
-    for col in features:
-        if col not in df.columns:
-            st.error(f"Missing column: {col}")
-            st.stop()
-
-    X = df[features]
+    X = df[['State_enc', 'Season_enc', 'Yield']]
     y = df['Crop_enc']
 
     model = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -57,83 +62,90 @@ model, le_state, le_season, le_crop = train_model(df)
 # -----------------------------
 # UI
 # -----------------------------
-st.title("Smart Crop Recommendation")
+st.title("🌾 Smart Crop Recommendation System")
 
-state = st.selectbox("State", sorted(df['State_Name'].unique()))
-season = st.selectbox("Season", sorted(df['Season'].unique()))
+col1, col2 = st.columns(2)
 
+with col1:
+    state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
+
+with col2:
+    season = st.selectbox("Select Season", sorted(df['Season'].unique()))
+
+# -----------------------------
+# FILTER DATA
+# -----------------------------
 filtered = df[
     (df['State_Name'] == state) &
     (df['Season'] == season)
 ]
 
-st.subheader("Available Crops")
+st.subheader("🌱 Available Crops")
 
 if filtered.empty:
-    st.warning("No data found")
-else:
-    st.write(", ".join(filtered['Crop'].unique()))
+    st.warning("No data available for this selection")
+    st.stop()
+
+crop_list = sorted(filtered['Crop'].unique())
+st.write(", ".join(crop_list))
 
 # -----------------------------
-# PREDICT
+# YIELD CALCULATION (kg/ha)
 # -----------------------------
-if st.button("Recommend"):
+crop_yield = filtered.groupby('Crop')['Yield'].mean()
 
-    if filtered.empty:
-        st.error("No data")
+# -----------------------------
+# GRAPH (ALL CROPS)
+# -----------------------------
+fig, ax = plt.subplots(figsize=(14, 5))
+
+ax.bar(crop_yield.index, crop_yield.values)
+ax.set_xlabel("Crops")
+ax.set_ylabel("Average Yield (kg/ha)")
+plt.xticks(rotation=90)
+
+st.pyplot(fig)
+
+# -----------------------------
+# RECOMMENDATION
+# -----------------------------
+if st.button("Recommend Best Combination"):
+
+    avg_yield = filtered['Yield'].mean()
+
+    input_data = [[
+        le_state.transform([state])[0],
+        le_season.transform([season])[0],
+        avg_yield
+    ]]
+
+    probs = model.predict_proba(input_data)[0]
+
+    # Normalize yield
+    yield_norm = crop_yield / crop_yield.max()
+
+    scores = []
+
+    for crop in crop_yield.index:
+        try:
+            idx = le_crop.transform([crop])[0]
+            model_score = probs[idx]
+            yield_score = yield_norm[crop]
+
+            # HYBRID SCORE
+            final_score = (0.6 * model_score) + (0.4 * yield_score)
+
+            scores.append((crop, final_score))
+        except:
+            continue
+
+    scores = sorted(scores, key=lambda x: x[1], reverse=True)
+
+    if len(scores) < 2:
+        st.error("Not enough crops for combination")
         st.stop()
 
-    try:
-        avg_vals = filtered[['level1','level2','level3','total','Yield']].mean()
+    best_crop1 = scores[0][0]
+    best_crop2 = scores[1][0]
 
-        input_data = [[
-            le_state.transform([state])[0],
-            le_season.transform([season])[0],
-            avg_vals['level1'],
-            avg_vals['level2'],
-            avg_vals['level3'],
-            avg_vals['total'],
-            avg_vals['Yield']
-        ]]
-
-        probs = model.predict_proba(input_data)[0]
-
-        crop_yield = filtered.groupby('Crop')['Yield'].mean()
-        yield_norm = crop_yield / crop_yield.max()
-
-        scores = []
-
-        for crop in crop_yield.index:
-            try:
-                idx = le_crop.transform([crop])[0]
-                model_prob = probs[idx]
-                yield_score = yield_norm[crop]
-
-                final_score = (0.6 * model_prob) + (0.4 * yield_score)
-
-                scores.append((crop, final_score))
-            except:
-                continue  # skip problematic crops
-
-        scores = sorted(scores, key=lambda x: x[1], reverse=True)
-
-        if len(scores) < 2:
-            st.error("Not enough crops")
-            st.stop()
-
-        # GRAPH
-        plot_df = pd.DataFrame(scores[:10], columns=["Crop", "Score"])
-
-        fig, ax = plt.subplots(figsize=(12,5))
-        ax.bar(plot_df["Crop"], plot_df["Score"])
-        ax.set_xlabel("Crops")
-        ax.set_ylabel("Score")
-        plt.xticks(rotation=90)
-
-        st.pyplot(fig)
-
-        # BEST COMBINATION
-        st.success(f"{scores[0][0]} + {scores[1][0]}")
-
-    except Exception as e:
-        st.error(f"Error: {e}")
+    st.success(f"👉 {best_crop1} + {best_crop2}")
