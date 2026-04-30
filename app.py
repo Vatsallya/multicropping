@@ -109,7 +109,7 @@ crop_yield = (
 # -------------------------
 # GRAPH (ALL CROPS)
 # -------------------------
-st.subheader("📊 Crop Yield Comparison")
+st.subheader(" Crop Yield Comparison")
 
 fig, ax = plt.subplots(figsize=(14, 6))
 
