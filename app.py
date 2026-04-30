@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Smart Crop Recommendation", layout="centered")
 
@@ -49,32 +50,26 @@ if st.button("Recommend Best Combination"):
 
     if filtered.empty:
         st.error("No data available")
+
     else:
-        # Average yield per crop
+        # Average yield calculation
         crop_yield = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False)
 
         # -----------------------------
-        # GRAPH (REAL MEANING)
+        # GRAPH (ALL CROPS)
         # -----------------------------
-        import matplotlib.pyplot as plt
+        st.subheader("📊 Crop Yield (Average kg/ha)")
 
-# Average yield calculation
-crop_yield = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False)
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.bar(crop_yield.index, crop_yield.values)
 
-# Plot graph
-st.subheader("📊 Crop Yield (Average kg/ha)")
+        ax.set_xlabel("Crops")
+        ax.set_ylabel("Average Yield (kg/ha)")
+        ax.set_title("Crop Yield Comparison")
 
-fig, ax = plt.subplots()
+        plt.xticks(rotation=90)
 
-ax.bar(crop_yield.index, crop_yield.values)
-
-ax.set_xlabel("Crops")
-ax.set_ylabel("Average Yield (kg/ha)")   # ✅ THIS IS YOUR Y-AXIS LABEL
-ax.set_title("Crop Yield Comparison")
-
-plt.xticks(rotation=90)
-
-st.pyplot(fig)
+        st.pyplot(fig)
 
         # -----------------------------
         # BEST COMBINATION
@@ -85,10 +80,6 @@ st.pyplot(fig)
             best_two = crop_yield.head(2).index.tolist()
 
             st.success("🌾 Best Crop Combination")
-
             st.markdown(f"## 👉 {best_two[0]} + {best_two[1]}")
 
-            # -----------------------------
-            # OPTIONAL (simple clarity)
-            # -----------------------------
-            st.write("🌱 Based on highest average yield in selected region & season")
+            st.write("🌱 Based on highest average yield (kg/ha)")
