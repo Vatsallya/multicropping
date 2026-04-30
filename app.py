@@ -4,7 +4,6 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
-from itertools import combinations
 
 st.set_page_config(page_title="Smart Crop Recommendation", layout="centered")
 
@@ -52,14 +51,14 @@ st.title("🌾 Smart Crop Recommendation System")
 state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
 season = st.selectbox("Select Season", sorted(df['Season'].unique()))
 
-# -----------------------------
-# FILTER DATA
-# -----------------------------
 filtered = df[
     (df['State_Name'] == state) &
     (df['Season'] == season)
 ]
 
+# -----------------------------
+# AVAILABLE CROPS
+# -----------------------------
 st.subheader("🌱 Available Crops")
 
 if filtered.empty:
@@ -69,25 +68,14 @@ else:
     st.write(", ".join(crops))
 
 # -----------------------------
-# SHOW REAL COMBINATIONS
+# VISUALIZATION (FIXED)
 # -----------------------------
-st.subheader("🔗 Common Crop Combinations")
+st.subheader("📊 Top Crops by Yield")
 
 if not filtered.empty:
-    combo_list = []
+    crop_stats = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False).head(10)
 
-    # Create combinations from dataset rows
-    crop_counts = filtered['Crop'].value_counts()
-
-    top_crops = crop_counts.head(10).index.tolist()
-
-    for c1, c2 in combinations(top_crops, 2):
-        combo_list.append((f"{c1} + {c2}", crop_counts[c1] + crop_counts[c2]))
-
-    combo_df = pd.DataFrame(combo_list, columns=["Combination", "Score"])
-    combo_df = combo_df.sort_values(by="Score", ascending=False).head(10)
-
-    st.bar_chart(combo_df.set_index("Combination"))
+    st.bar_chart(crop_stats)
 
 # -----------------------------
 # RECOMMENDATION
@@ -95,7 +83,7 @@ if not filtered.empty:
 if st.button("Recommend Best Combination"):
 
     if filtered.empty:
-        st.error("No data for prediction")
+        st.error("No data")
     else:
         avg_vals = filtered[['level1','level2','level3','total','Yield']].mean()
 
@@ -111,54 +99,51 @@ if st.button("Recommend Best Combination"):
 
         probs = model.predict_proba(input_data)[0]
 
-        # -----------------------------
-        # HYBRID SCORING
-        # -----------------------------
         crop_stats = filtered.groupby('Crop').agg({
             'Yield': 'mean'
         }).reset_index()
 
+        # Normalize yield
         crop_stats['Yield_norm'] = crop_stats['Yield'] / crop_stats['Yield'].max()
 
-        available = crop_stats['Crop'].values
-        available_idx = le_crop.transform(available)
+        scores = []
 
-        crop_scores = []
+        for _, row in crop_stats.iterrows():
+            crop = row['Crop']
 
-        for crop, idx in zip(available, available_idx):
+            if crop not in le_crop.classes_:
+                continue
+
+            idx = le_crop.transform([crop])[0]
             prob = probs[idx]
-            yield_score = crop_stats[crop_stats['Crop'] == crop]['Yield_norm'].values[0]
 
-            final_score = (0.6 * prob) + (0.4 * yield_score)
+            final_score = (0.7 * prob) + (0.3 * row['Yield_norm'])
 
-            crop_scores.append((crop, prob, yield_score, final_score))
+            scores.append((crop, prob, row['Yield_norm'], final_score))
 
-        crop_scores = sorted(crop_scores, key=lambda x: x[3], reverse=True)
+        scores = sorted(scores, key=lambda x: x[3], reverse=True)
 
-        # BEST 2 CROPS
-        crop1, p1, y1, s1 = crop_scores[0]
-        crop2, p2, y2, s2 = crop_scores[1]
+        crop1, p1, y1, s1 = scores[0]
+        crop2, p2, y2, s2 = scores[1]
 
-        # Combined (more realistic)
-        combined = round((s1 * s2) * 100, 2)
+        # Better combined score
+        combined = round(((s1 + s2) / 2) * 100, 2)
 
         # -----------------------------
         # OUTPUT
         # -----------------------------
-        st.success("🌾 Best Practical Crop Combination")
+        st.success("🌾 Best Crop Combination")
 
         st.markdown(f"## 👉 {crop1} + {crop2}")
 
         st.subheader("📊 Confidence Analysis")
 
-        st.write(f"🌱 {crop1} → Model: {round(p1*100,2)}% | Yield Score: {round(y1*100,2)}%")
-        st.write(f"🌱 {crop2} → Model: {round(p2*100,2)}% | Yield Score: {round(y2*100,2)}%")
+        st.write(f"{crop1} → Model: {round(p1*100,2)}% | Yield: {round(y1*100,2)}%")
+        st.write(f"{crop2} → Model: {round(p2*100,2)}% | Yield: {round(y2*100,2)}%")
 
-        st.write(f"🌾 Combined Practical Score → {combined}%")
+        st.write(f"🌾 Combined Score → {combined}%")
 
-        # Progress bars
         st.progress(float(p1))
         st.progress(float(p2))
 
-        st.info("⚠️ This is a data-driven recommendation based on historical patterns, not a guaranteed real-world outcome.")
-        st.progress(p2)
+        st.info("This is a data-driven recommendation, not a guaranteed real-world outcome.")
