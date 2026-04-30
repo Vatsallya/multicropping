@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 
-st.set_page_config(page_title="Smart Crop Recommendation", layout="centered")
+st.set_page_config(page_title="Crop Recommendation", layout="wide")
 
 # -----------------------------
 # LOAD DATA
@@ -18,12 +21,40 @@ def load_data():
 df = load_data()
 
 # -----------------------------
+# TRAIN MODEL (NO PKL)
+# -----------------------------
+@st.cache_resource
+def train_model(df):
+    le_state = LabelEncoder()
+    le_season = LabelEncoder()
+    le_crop = LabelEncoder()
+
+    df['State_enc'] = le_state.fit_transform(df['State_Name'])
+    df['Season_enc'] = le_season.fit_transform(df['Season'])
+    df['Crop_enc'] = le_crop.fit_transform(df['Crop'])
+
+    X = df[['State_enc','Season_enc','level1','level2','level3','total','Yield']]
+    y = df['Crop_enc']
+
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+
+    return model, le_state, le_season, le_crop
+
+model, le_state, le_season, le_crop = train_model(df)
+
+# -----------------------------
 # UI
 # -----------------------------
-st.title("🌾 Smart Crop Recommendation System")
+st.markdown("<h1 style='text-align:center;'>Smart Crop Recommendation</h1><hr>", unsafe_allow_html=True)
 
-state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
-season = st.selectbox("Select Season", sorted(df['Season'].unique()))
+col1, col2 = st.columns(2)
+
+with col1:
+    state = st.selectbox("Select State", sorted(df['State_Name'].unique()))
+
+with col2:
+    season = st.selectbox("Select Season", sorted(df['Season'].unique()))
 
 # -----------------------------
 # FILTER DATA
@@ -33,10 +64,7 @@ filtered = df[
     (df['Season'] == season)
 ]
 
-# -----------------------------
-# AVAILABLE CROPS
-# -----------------------------
-st.subheader("🌱 Available Crops")
+st.subheader("Available Crops")
 
 if filtered.empty:
     st.warning("No data available")
@@ -44,7 +72,7 @@ else:
     st.write(", ".join(sorted(filtered['Crop'].unique())))
 
 # -----------------------------
-# RECOMMENDATION
+# PREDICTION
 # -----------------------------
 if st.button("Recommend Best Combination"):
 
@@ -52,20 +80,57 @@ if st.button("Recommend Best Combination"):
         st.error("No data available")
 
     else:
-        # Average yield calculation
-        crop_yield = filtered.groupby('Crop')['Yield'].mean().sort_values(ascending=False)
+        # Average feature values
+        avg_vals = filtered[['level1','level2','level3','total','Yield']].mean()
+
+        input_data = [[
+            le_state.transform([state])[0],
+            le_season.transform([season])[0],
+            avg_vals['level1'],
+            avg_vals['level2'],
+            avg_vals['level3'],
+            avg_vals['total'],
+            avg_vals['Yield']
+        ]]
+
+        probs = model.predict_proba(input_data)[0]
 
         # -----------------------------
-        # GRAPH (ALL CROPS)
+        # YIELD CALCULATION
         # -----------------------------
-        st.subheader("📊 Crop Yield (Average kg/ha)")
+        crop_yield = filtered.groupby('Crop')['Yield'].mean()
 
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.bar(crop_yield.index, crop_yield.values)
+        # Normalize yield
+        yield_norm = crop_yield / crop_yield.max()
+
+        scores = []
+
+        for crop in crop_yield.index:
+            if crop not in le_crop.classes_:
+                continue
+
+            idx = le_crop.transform([crop])[0]
+            model_prob = probs[idx]
+            yield_score = yield_norm[crop]
+
+            # HYBRID SCORE
+            final_score = (0.6 * model_prob) + (0.4 * yield_score)
+
+            scores.append((crop, final_score))
+
+        # Sort crops
+        scores = sorted(scores, key=lambda x: x[1], reverse=True)
+
+        # -----------------------------
+        # GRAPH (NO TITLE)
+        # -----------------------------
+        plot_df = pd.DataFrame(scores[:15], columns=["Crop", "Score"])
+
+        fig, ax = plt.subplots(figsize=(14,6))
+        ax.bar(plot_df["Crop"], plot_df["Score"])
 
         ax.set_xlabel("Crops")
-        ax.set_ylabel("Average Yield (kg/ha)")
-        ax.set_title("Crop Yield Comparison")
+        ax.set_ylabel("Score")
 
         plt.xticks(rotation=90)
 
@@ -74,12 +139,19 @@ if st.button("Recommend Best Combination"):
         # -----------------------------
         # BEST COMBINATION
         # -----------------------------
-        if len(crop_yield) < 2:
-            st.error("Not enough crops for combination")
+        if len(scores) < 2:
+            st.error("Not enough crops")
         else:
-            best_two = crop_yield.head(2).index.tolist()
+            best_two = [scores[0][0], scores[1][0]]
 
-            st.success("🌾 Best Crop Combination")
-            st.markdown(f"## 👉 {best_two[0]} + {best_two[1]}")
+            st.markdown("""
+            <div style="padding:20px; background:#f0f2f6; border-radius:10px;">
+            <h3 style='text-align:center;'>Recommended Crop Combination</h3>
+            </div>
+            """, unsafe_allow_html=True)
 
-            st.write("🌱 Based on highest average yield (kg/ha)")
+            st.markdown(f"""
+            <h2 style='text-align:center; color:#2E7D32;'>
+            {best_two[0]} + {best_two[1]}
+            </h2>
+            """, unsafe_allow_html=True)
